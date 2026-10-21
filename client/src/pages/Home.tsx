@@ -32,12 +32,12 @@ function load<T>(key: string, fallback: T): T { try { const raw = localStorage.g
 function save(key: string, value: unknown) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage may be unavailable */ } }
 
 function extractTasks(text: string): Task[] {
-  const phrases = text.split(/[.!?\n]+/).map(s => s.trim()).filter(Boolean);
+  const phrases = text.split(/[\n,;•]+|(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
   if (!phrases.length) return [];
   return phrases.slice(0, 8).map((phrase, index) => ({
-    id: `task-${Date.now()}-${index}`, title: phrase.replace(/^[-•]\s*/, "").replace(/^i need to\s+/i, "").replace(/^need to\s+/i, ""),
+    id: `task-${Date.now()}-${index}`, title: phrase.replace(/^[-•]\s*/, "").replace(/^i have to\s+/i, "").replace(/^i need to\s+/i, "").replace(/^need to\s+/i, ""),
     category: /study|exam|test|assignment|chapter|revise|read/i.test(phrase) ? "Study" : /buy|clean|grocer|room|errand/i.test(phrase) ? "Personal" : "Work & projects",
-    priority: /due|deadline|by\s+|tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|urgent|exam|test/i.test(phrase) ? "High" : "Normal", minutes: 20,
+    priority: /due|deadline|by\s+|tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|urgent|important|exam|test/i.test(phrase) ? "High" : /someday|eventually|later|when i can|no rush|if i have time/i.test(phrase) ? "Low" : "Normal", minutes: 20,
     status: index === 0 ? "Ready" : "Inbox", subtasks: ["Define the smallest useful first step", "Set a short timer", "Mark it complete"],
     firstStep: "Write down the smallest visible action you can do in five minutes.", source: "explicit",
     deadline: phrase.match(/(?:due|by|on|for)\s+([^,]+)/i)?.[1]?.trim(),
