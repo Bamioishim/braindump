@@ -1,25 +1,121 @@
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { Streamdown } from 'streamdown';
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowRight, Check, CheckCircle2, ChevronDown, ChevronLeft, Circle, Clock3,
+  Coffee, FileText, Flag, History as HistoryIcon, Inbox, Lightbulb, ListTodo,
+  Menu, MoreHorizontal, Pause, Play, Plus, RotateCcw, Sparkles, Target,
+  TimerReset, Trash2, WandSparkles, X, Zap,
+} from "lucide-react";
 
-/**
- * All content in this page are only for example, replace with your own feature implementation
- * When building pages, remember your instructions in Frontend Workflow, Frontend Best Practices, Design Guide and Common Pitfalls
- */
+type View = "today" | "dump" | "tasks" | "focus" | "history";
+type Priority = "Critical" | "High" | "Normal" | "Low";
+type Task = {
+  id: string; title: string; category: string; priority: Priority; minutes: number;
+  deadline?: string; status: "Inbox" | "Ready" | "In progress" | "Completed" | "Deferred";
+  subtasks: string[]; firstStep: string; source: "explicit" | "suggested";
+};
+
+type PlanBlock = { taskId: string; label: string; time: string; minutes: number; kind?: "break" };
+
+const SAMPLE = "I have a physics assignment due tomorrow, a chemistry test on Friday, two biology chapters to finish this week, a message to send to my project team, groceries to buy, and my room to clean. I keep delaying physics because I don't know where to start. I have about two hours free today.";
+const starterTasks: Task[] = [
+  { id: "physics", title: "Start the physics assignment", category: "Study", priority: "Critical", minutes: 45, deadline: "Due tomorrow", status: "Ready", subtasks: ["Open the assignment brief", "List the questions", "Solve the first question"], firstStep: "Open the assignment brief and highlight what is being asked.", source: "explicit" },
+  { id: "chemistry", title: "Revise organic chemistry", category: "Study", priority: "High", minutes: 35, deadline: "Test Friday", status: "Ready", subtasks: ["List topics to revise", "Review notes", "Do practice questions"], firstStep: "Write down the three topics that feel least familiar.", source: "explicit" },
+  { id: "biology", title: "Finish two biology chapters", category: "Study", priority: "Normal", minutes: 50, deadline: "This week", status: "Inbox", subtasks: ["Choose a chapter", "Read and annotate", "Test recall"], firstStep: "Choose the chapter with the nearest lecture connection.", source: "explicit" },
+  { id: "team", title: "Send the project team an update", category: "Work & projects", priority: "High", minutes: 10, status: "Ready", subtasks: ["Draft the update", "Attach the outline", "Send"], firstStep: "Open a blank message and write the one-sentence status.", source: "explicit" },
+  { id: "groceries", title: "Buy groceries", category: "Errands", priority: "Low", minutes: 25, status: "Inbox", subtasks: ["Make a short list", "Pick up essentials"], firstStep: "Write down the five things you will actually cook this week.", source: "explicit" },
+  { id: "room", title: "Reset the main room surfaces", category: "Personal", priority: "Low", minutes: 20, status: "Inbox", subtasks: ["Collect rubbish", "Clear the main surface"], firstStep: "Put a bag by the door and collect visible rubbish for five minutes.", source: "suggested" },
+];
+
+function load<T>(key: string, fallback: T): T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } }
+function save(key: string, value: unknown) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage may be unavailable */ } }
+
+function extractTasks(text: string): Task[] {
+  const lower = text.toLowerCase();
+  if (lower.includes("physics") || lower.includes("chemistry") || lower.includes("biology")) return starterTasks;
+  const phrases = text.split(/[.!?\n]+/).map(s => s.trim()).filter(Boolean);
+  if (!phrases.length) return [];
+  return phrases.slice(0, 8).map((phrase, index) => ({
+    id: `task-${Date.now()}-${index}`, title: phrase.replace(/^[-•]\s*/, "").replace(/^i need to\s+/i, "").replace(/^need to\s+/i, ""),
+    category: index % 2 ? "Personal" : "Work & projects", priority: index === 0 ? "High" : "Normal", minutes: 20,
+    status: index === 0 ? "Ready" : "Inbox", subtasks: ["Define the smallest useful first step", "Set a short timer", "Mark it complete"],
+    firstStep: "Write down the smallest visible action you can do in five minutes.", source: "explicit",
+  }));
+}
+
 export default function Home() {
-  // If theme is switchable in App.tsx, we can implement theme toggling like this:
-  // const { theme, toggleTheme } = useTheme();
+  const [view, setView] = useState<View>("today");
+  const [tasks, setTasks] = useState<Task[]>(() => load("bdd-tasks", starterTasks));
+  const [dump, setDump] = useState(() => load("bdd-dump", ""));
+  const [history, setHistory] = useState<string[]>(() => load("bdd-history", []));
+  const [plan, setPlan] = useState<PlanBlock[]>(() => load("bdd-plan", []));
+  const [available, setAvailable] = useState(120);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [seconds, setSeconds] = useState(25 * 60);
+  const [running, setRunning] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [mobileNav, setMobileNav] = useState(false);
 
-  return (
-    <div className="min-h-screen flex flex-col">
-      <main>
-        {/* Example: lucide-react for icons */}
-        <Loader2 className="animate-spin" />
-        Example Page
-        {/* Example: Streamdown for markdown rendering */}
-        <Streamdown>Any **markdown** content</Streamdown>
-        <Button variant="default">Example Button</Button>
-      </main>
-    </div>
-  );
+  useEffect(() => save("bdd-tasks", tasks), [tasks]);
+  useEffect(() => save("bdd-dump", dump), [dump]);
+  useEffect(() => save("bdd-plan", plan), [plan]);
+  useEffect(() => { if (history.length) save("bdd-history", history); }, [history]);
+  useEffect(() => { if (!running) return; const id = window.setInterval(() => setSeconds(s => s > 0 ? s - 1 : 0), 1000); return () => window.clearInterval(id); }, [running]);
+
+  const completed = tasks.filter(t => t.status === "Completed").length;
+  const progress = tasks.length ? Math.round(completed / tasks.length * 100) : 0;
+  const focusTask = tasks.find(t => t.id === focusId) ?? tasks.find(t => t.status !== "Completed");
+  const readyTasks = tasks.filter(t => t.status !== "Completed").sort((a, b) => (a.priority === "Critical" ? -2 : a.priority === "High" ? -1 : 1) - (b.priority === "Critical" ? -2 : b.priority === "High" ? -1 : 1));
+  const categories = [...new Set(tasks.map(t => t.category))];
+
+  function flash(message: string) { setNotice(message); window.setTimeout(() => setNotice(""), 2800); }
+  function loadSample() { setDump(SAMPLE); flash("Sample loaded — turn the noise into a plan."); }
+  function processDump(mode: "plan" | "organize") {
+    if (!dump.trim()) { flash("Add a few thoughts first — messy is completely fine."); return; }
+    const next = extractTasks(dump); setTasks(next); setHistory(h => [dump, ...h].slice(0, 8));
+    if (mode === "plan") generatePlan(next); else setView("tasks");
+    flash(mode === "plan" ? "Your next steps are ready." : "Your brain dump is sorted.");
+  }
+  function generatePlan(source = tasks) {
+    const active = source.filter(t => t.status !== "Completed").sort((a, b) => (a.priority === "Critical" ? -2 : a.priority === "High" ? -1 : 1) - (b.priority === "Critical" ? -2 : b.priority === "High" ? -1 : 1));
+    let elapsed = 0; const blocks: PlanBlock[] = [];
+    for (const task of active) { if (elapsed + task.minutes > available) break; const start = 9 * 60 + elapsed; blocks.push({ taskId: task.id, label: task.title, time: `${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`, minutes: task.minutes }); elapsed += task.minutes; if (elapsed < available && blocks.length % 2 === 0) { blocks.push({ taskId: `break-${blocks.length}`, label: "Short reset", time: `${String(Math.floor((9 * 60 + elapsed) / 60)).padStart(2, "0")}:${String((9 * 60 + elapsed) % 60).padStart(2, "0")}`, minutes: 5, kind: "break" }); elapsed += 5; } }
+    setPlan(blocks); setView("today"); flash("A realistic plan is ready for the time you have.");
+  }
+  function toggleTask(id: string) { setTasks(ts => ts.map(t => t.id === id ? { ...t, status: t.status === "Completed" ? "Ready" : "Completed" } : t)); }
+  function makeEasier(id: string) { setTasks(ts => ts.map(t => t.id === id ? { ...t, subtasks: ["Open the relevant document", "Work for five focused minutes", "Write down what is still unclear", ...t.subtasks].slice(0, 5) } : t)); flash("The task is smaller now. Start with the first step."); }
+  function startFocus(id: string) { setFocusId(id); setSeconds(25 * 60); setRunning(false); setView("focus"); }
+  function resetDemo() { setTasks(starterTasks); setDump(""); setPlan([]); setFocusId(null); setView("today"); flash("Demo reset."); }
+  function formatTime(s: number) { return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; }
+
+  const nav = [{ id: "today", label: "Today", icon: Target }, { id: "dump", label: "Brain Dump", icon: Inbox }, { id: "tasks", label: "My Tasks", icon: ListTodo }, { id: "focus", label: "Focus", icon: Zap }, { id: "history", label: "History", icon: HistoryIcon }];
+  return <div className="app-shell">
+    <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
+      <div className="brand" onClick={() => setView("today")}><span className="brand-mark"><img src="/brain-logo-small.png" alt="Brain Dump → Done logo" /></span><span><strong>brain dump</strong><em>→ done</em></span></div>
+      <div className="side-label">Your workspace</div>
+      <nav>{nav.map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => { setView(item.id as View); setMobileNav(false); }}><Icon size={17} /><span>{item.label}</span>{item.id === "tasks" && <small>{tasks.filter(t => t.status !== "Completed").length}</small>}</button>; })}</nav>
+      <div className="sidebar-bottom"><div className="tiny-progress"><span>Today’s progress</span><b>{progress}%</b><div><i style={{ width: `${progress}%` }} /></div></div><button className="reset-link" onClick={resetDemo}><RotateCcw size={14} /> Reset demo</button></div>
+    </aside>
+    <main className="main-content">
+      <header className="topbar"><button className="icon-button mobile-menu" onClick={() => setMobileNav(v => !v)}><Menu size={20} /></button><div className="crumb"><span>{view === "today" ? "Overview" : nav.find(n => n.id === view)?.label}</span><b>Wednesday, October 21, 2026</b></div><div className="top-actions"><div className="top-progress"><span>{completed}/{tasks.length} done</span><div><i style={{ width: `${progress}%` }} /></div></div><button className="new-dump" onClick={() => { setDump(""); setView("dump"); }}><Plus size={16} /> New brain dump</button><button className="avatar">AS</button></div></header>
+      {notice && <div className="toast"><Sparkles size={16} /> {notice}</div>}
+      <div className="page-wrap">
+        {view === "today" && <>
+          <section className="hero-row"><div><div className="eyebrow"><span className="eyebrow-dot" /> Wednesday reset</div><h1>Make room for<br /><span>what matters next.</span></h1><p className="hero-copy">A calmer plan for a full mind. You have <strong>{available} minutes</strong> to make a little progress today.</p><div className="hero-actions"><button className="button primary" onClick={() => setView("dump")}>Clear my head <ArrowRight size={17} /></button><button className="button text-button" onClick={loadSample}>Explore a sample <ChevronRightIcon /></button></div></div><div className="hero-note"><div className="note-top"><span>your north star</span><MoreHorizontal size={16} /></div><div className="note-icon"><Lightbulb size={19} /></div><p>“You don’t need to finish everything. You just need a clear next step.”</p><span className="note-line" /></div></section>
+          <section className="section-head"><div><span className="section-kicker">A little clarity</span><h2>Here’s your day at a glance</h2></div><button className="quiet-button" onClick={() => generatePlan()}>Replan <WandSparkles size={15} /></button></section>
+          <div className="stat-grid"><div className="stat-card sage"><span>Progress today</span><strong>{progress}%</strong><div className="stat-line"><i style={{ width: `${progress}%` }} /></div><small>{completed === 0 ? "A blank page is a beginning." : `${completed} meaningful step${completed === 1 ? "" : "s"} complete`}</small></div><div className="stat-card peach"><span>Time available</span><strong>{Math.floor(available / 60)}h {available % 60 ? `${available % 60}m` : ""}</strong><small>Enough for one important thing + a reset</small><div className="stat-icon"><Clock3 size={18} /></div></div><div className="stat-card white"><span>In your way</span><strong>{tasks.filter(t => t.status !== "Completed").length}</strong><small>tasks, sorted by what helps most</small><div className="stat-icon forest"><Flag size={17} /></div></div></div>
+          <div className="content-grid"><section className="plan-card"><div className="card-head"><div><span className="section-kicker">Your next best moves</span><h3>Today’s plan</h3></div><button className="more-button" onClick={() => setAvailable(a => a === 120 ? 60 : 120)}>{available === 120 ? "2h window" : "1h window"} <ChevronDown size={15} /></button></div>{plan.length ? <div className="timeline">{plan.map(block => <div className={`timeline-row ${block.kind === "break" ? "break-row" : ""}`} key={block.taskId}><time>{block.time}</time><div className="timeline-dot">{block.kind === "break" ? <Coffee size={13} /> : <span />}</div><div className="timeline-copy"><strong>{block.label}</strong><small>{block.kind === "break" ? "Breathe, stretch, refill" : `${block.minutes} min · ${tasks.find(t => t.id === block.taskId)?.firstStep ?? "One small step"}`}</small></div>{block.kind !== "break" && <button className="row-action" onClick={() => startFocus(block.taskId)}><Play size={14} /></button>}</div>)}</div> : <div className="empty-plan"><div className="empty-icon"><TimerReset size={22} /></div><div><strong>Your plan is waiting for a first task.</strong><p>Load the sample or turn your own brain dump into a calm sequence.</p></div><button className="button small primary" onClick={loadSample}>Try sample <ArrowRight size={14} /></button></div>}</section><aside className="side-stack"><div className="next-card"><div className="card-head"><span className="section-kicker">Do this first</span><span className="priority-dot" /></div><h3>{readyTasks[0]?.title ?? "You’re all caught up"}</h3><p>{readyTasks[0]?.firstStep ?? "Enjoy the space you made."}</p>{readyTasks[0] && <button className="button dark full" onClick={() => startFocus(readyTasks[0].id)}>Start a focus session <Play size={15} /></button>}</div><div className="quote-card"><span className="quote-mark">“</span><p>Small starts are still starts.</p><span>— today’s reminder</span></div></aside></div>
+        </>}
+        {view === "dump" && <section className="dump-page"><div className="dump-heading"><div className="eyebrow"><span className="eyebrow-dot peach-dot" /> No sorting required</div><h1>What’s taking up<br /><span>space in your head?</span></h1><p>Don’t organize it. Don’t make it sound neat.<br />Just get it all out. We’ll help with the next part.</p></div><div className="editor-card"><div className="editor-toolbar"><span><FileText size={15} /> brain dump / untitled</span><span>{dump.trim() ? `${dump.trim().split(/\s+/).length} words` : "0 words"}</span></div><textarea autoFocus value={dump} onChange={e => setDump(e.target.value)} placeholder="Assignments, deadlines, ideas, errands, things you’ve been avoiding… Put everything here." /><div className="editor-foot"><button className="text-button" onClick={loadSample}><Sparkles size={15} /> Load a sample</button><button className="text-button muted" onClick={() => setDump("")}><X size={15} /> Clear</button></div></div><div className="dump-options"><div><span className="section-kicker">Optional context</span><h3>Shape the plan around your day.</h3></div><div className="option-pills"><button className={available === 120 ? "selected" : ""} onClick={() => setAvailable(120)}>2 hours free</button><button className={available === 60 ? "selected" : ""} onClick={() => setAvailable(60)}>1 hour free</button><button onClick={() => flash("Energy level noted — we’ll keep the first step light.")}>Low energy today</button></div></div><div className="dump-actions"><button className="button primary" onClick={() => processDump("plan")}>Turn this into a plan <ArrowRight size={17} /></button><button className="button outline" onClick={() => processDump("organize")}>Just organize my tasks</button></div></section>}
+        {view === "tasks" && <section><div className="page-heading"><div><span className="eyebrow"><span className="eyebrow-dot" /> The full picture</span><h1>Your brain dump,<br /><span>sorted.</span></h1><p>Here’s what matters, what can wait, and where to start.</p></div><button className="button primary" onClick={() => setView("dump")}><Plus size={16} /> Add task</button></div><div className="task-summary"><div><strong>{tasks.length}</strong><span>tasks found</span></div><div><strong>{tasks.filter(t => t.priority === "High" || t.priority === "Critical").length}</strong><span>need attention</span></div><div><strong>{Math.round(tasks.reduce((a, t) => a + t.minutes, 0) / 60)}h</strong><span>estimated work</span></div><div className="why-order"><Zap size={16} /><span><b>Why this order?</b> Deadlines first, then quick wins that remove a blocker.</span></div></div><div className="category-grid">{categories.map(cat => <div className="category-column" key={cat}><div className="category-title"><span>{cat}</span><b>{tasks.filter(t => t.category === cat && t.status !== "Completed").length}</b></div>{tasks.filter(t => t.category === cat).map(task => <TaskCard key={task.id} task={task} expanded={expanded === task.id} onExpand={() => setExpanded(expanded === task.id ? null : task.id)} onToggle={() => toggleTask(task.id)} onFocus={() => startFocus(task.id)} onEasier={() => makeEasier(task.id)} onDelete={() => setTasks(ts => ts.filter(t => t.id !== task.id))} />)}</div>)}</div></section>}
+        {view === "focus" && <section className="focus-page"><div className="focus-back" onClick={() => setView("today")}><ChevronLeft size={16} /> Back to today</div><div className="focus-layout"><div className="focus-copy"><span className="eyebrow"><span className="eyebrow-dot peach-dot" /> One thing at a time</span><h1>Make the next<br /><span>25 minutes count.</span></h1><p>You’re working on <strong>{focusTask?.title ?? "a meaningful task"}</strong>. No need to solve the whole thing right now.</p><div className="focus-step"><span>Start here</span><strong>{focusTask?.firstStep ?? "Choose one small action."}</strong></div><div className="focus-controls"><button className="button dark" onClick={() => setRunning(v => !v)}>{running ? <Pause size={17} /> : <Play size={17} />}{running ? "Pause timer" : "Start timer"}</button><button className="button outline" onClick={() => { if (focusTask) toggleTask(focusTask.id); setView("today"); flash("Nice work — progress updated."); }}>Mark complete <Check size={16} /></button></div></div><div className="timer-card"><div className="timer-ring"><div><span>{formatTime(seconds)}</span><small>{running ? "in progress" : "ready when you are"}</small></div></div><div className="timer-footer"><span><Coffee size={15} /> Short focus sprint</span><button onClick={() => { setSeconds(25 * 60); setRunning(false); }}><TimerReset size={15} /> Reset</button></div></div></div></section>}
+        {view === "history" && <section><div className="page-heading"><div><span className="eyebrow"><span className="eyebrow-dot" /> Your thinking, kept</span><h1>A little proof<br /><span>you’re moving.</span></h1><p>Past brain dumps and plans stay here so you can pick up the thread.</p></div></div><div className="history-list">{history.length ? history.map((item, i) => <div className="history-item" key={`${item}-${i}`}><div className="history-icon"><FileText size={17} /></div><div><strong>{item.slice(0, 70)}{item.length > 70 ? "…" : ""}</strong><span>Brain dump · {i === 0 ? "Most recent" : `${i} days ago`}</span></div><button className="row-action" onClick={() => { setDump(item); setView("dump"); }}><ArrowRight size={16} /></button></div>) : <div className="history-empty"><HistoryIcon size={28} /><h3>Your history starts with the first brain dump.</h3><button className="button primary" onClick={() => setView("dump")}>Clear my head <ArrowRight size={16} /></button></div>}</div></section>}
+      </div>
+    </main>
+  </div>;
+}
+
+function ChevronRightIcon() { return <ArrowRight size={15} />; }
+function TaskCard({ task, expanded, onExpand, onToggle, onFocus, onEasier, onDelete }: { task: Task; expanded: boolean; onExpand: () => void; onToggle: () => void; onFocus: () => void; onEasier: () => void; onDelete: () => void }) {
+  return <article className={`task-card ${task.status === "Completed" ? "completed" : ""}`}><div className="task-main"><button className="check-button" onClick={onToggle}>{task.status === "Completed" ? <CheckCircle2 size={19} /> : <Circle size={19} />}</button><div className="task-content" onClick={onExpand}><div className="task-title-row"><h3>{task.title}</h3><span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span></div><div className="task-meta"><span><Clock3 size={13} /> {task.minutes} min</span>{task.deadline && <span><Flag size={13} /> {task.deadline}</span>}<span className="source-tag">{task.source === "suggested" ? "suggested" : "from your note"}</span></div></div><button className="chevron-button" onClick={onExpand}>{expanded ? <ChevronDown size={17} /> : <ArrowRight size={16} />}</button></div>{expanded && <div className="task-detail"><div className="first-step"><span>Best first step</span><p>{task.firstStep}</p></div><div className="subtasks">{task.subtasks.map((sub, i) => <div key={`${sub}-${i}`}><span>{i + 1}</span>{sub}</div>)}</div><div className="task-actions"><button onClick={onFocus}><Play size={14} /> Focus</button><button onClick={onEasier}><WandSparkles size={14} /> Make this easier</button><button className="delete" onClick={onDelete}><Trash2 size={14} /> Delete</button></div></div>}</article>;
 }
