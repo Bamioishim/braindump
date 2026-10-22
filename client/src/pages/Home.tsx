@@ -3,7 +3,7 @@ import {
   ArrowRight, Check, CheckCircle2, ChevronDown, ChevronLeft, Circle, Clock3,
   Coffee, FileText, Flag, History as HistoryIcon, Inbox, Lightbulb, ListTodo,
   Menu, MoreHorizontal, Pause, Play, Plus, Sparkles, Target,
-  Mic, TimerReset, Trash2, WandSparkles, X, Zap,
+  Mic, Moon, Sun, TimerReset, Trash2, WandSparkles, X, Zap,
 } from "lucide-react";
 
 type View = "today" | "dump" | "checklist" | "tasks" | "focus" | "history";
@@ -65,11 +65,13 @@ export default function Home() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskPriority, setNewTaskPriority] = useState<Priority>("Normal");
+  const [theme, setTheme] = useState<"light" | "dark">(() => load("bdd-theme", "light"));
 
   useEffect(() => save("bdd-tasks", tasks), [tasks]);
   useEffect(() => save("bdd-dump", dump), [dump]);
   useEffect(() => save("bdd-plan", plan), [plan]);
   useEffect(() => { if (history.length) save("bdd-history", history); }, [history]);
+  useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); save("bdd-theme", theme); }, [theme]);
   useEffect(() => { if (!running) return; const id = window.setInterval(() => setSeconds(s => s > 0 ? s - 1 : 0), 1000); return () => window.clearInterval(id); }, [running]);
 
   const completed = tasks.filter(t => t.status === "Completed").length;
@@ -138,7 +140,7 @@ export default function Home() {
     </aside>
     {mobileNav && <button className="mobile-nav-backdrop" aria-label="Close navigation menu" onClick={() => setMobileNav(false)} />}
     <main className="main-content">
-      <header className="topbar"><button className="icon-button mobile-menu" onClick={() => setMobileNav(v => !v)}><Menu size={20} /></button><div className="crumb">{view === "today" ? <img className="topbar-logo" src="/brain-logo-small.png" alt="Brain Dump → Done" /> : <span>{nav.find(n => n.id === view)?.label}</span>}</div><div className="top-actions"><div className="top-progress"><span>{completed}/{tasks.length} done</span><div><i style={{ width: `${progress}%` }} /></div></div><button className="new-dump" onClick={() => { setDump(""); setView("dump"); }}><Plus size={16} /> New brain dump</button><button className="avatar" onClick={() => flash("Sign up to keep your progress across devices.")}>AS</button></div></header>
+      <header className="topbar"><button className="icon-button mobile-menu" onClick={() => setMobileNav(v => !v)}><Menu size={20} /></button><div className="crumb">{view === "today" ? <img className="topbar-logo" src="/brain-logo-small.png" alt="Brain Dump → Done" /> : <span>{nav.find(n => n.id === view)?.label}</span>}</div><div className="top-actions"><div className="top-progress"><span>{completed}/{tasks.length} done</span><div><i style={{ width: `${progress}%` }} /></div></div><button className="theme-toggle" onClick={() => setTheme(current => current === "light" ? "dark" : "light")} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`} title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? <Moon size={15} /> : <Sun size={15} />}<span>{theme === "light" ? "Dark" : "Light"}</span></button><button className="new-dump" onClick={() => { setDump(""); setView("dump"); }}><Plus size={16} /> New brain dump</button><button className="avatar" onClick={() => flash("Sign up to keep your progress across devices.")}>AS</button></div></header>
       {showSignup && <div className="signup-popover"><div className="signup-popover-icon"><Sparkles size={16} /></div><div><strong>Keep your progress safe</strong><p>Sign up so your tasks and plans don’t disappear when you switch devices.</p><div className="signup-actions"><button className="button small primary" onClick={() => flash("Sign-up is ready when you are.")}>Sign up</button><button onClick={() => setShowSignup(false)}>Not now</button></div></div><button className="signup-close" onClick={() => setShowSignup(false)}><X size={14} /></button></div>}
       {notice && <div className="toast"><Sparkles size={16} /> {notice}</div>}
       <div className="page-wrap">
