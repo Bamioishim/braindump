@@ -11,7 +11,7 @@ type Priority = "Critical" | "High" | "Normal" | "Low";
 type Task = {
   id: string; title: string; category: string; priority: Priority; minutes: number;
   deadline?: string; status: "Inbox" | "Ready" | "In progress" | "Completed" | "Deferred";
-  subtasks: string[]; firstStep: string; source: "explicit" | "suggested"; needsClarification?: boolean;
+  subtasks: string[]; firstStep: string; source: "explicit" | "suggested"; needsClarification?: boolean; completedAt?: number;
 };
 
 type PlanBlock = { taskId: string; label: string; time: string; minutes: number; kind?: "break" };
@@ -76,6 +76,9 @@ export default function Home() {
 
   const completed = tasks.filter(t => t.status === "Completed").length;
   const progress = tasks.length ? Math.round(completed / tasks.length * 100) : 0;
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const completedToday = tasks.filter(t => t.status === "Completed" && t.completedAt && t.completedAt >= startOfToday.getTime()).length;
+  const todayProgress = tasks.length ? Math.round(completedToday / tasks.length * 100) : 0;
   const focusTask = tasks.find(t => t.id === focusId) ?? tasks.find(t => t.status !== "Completed");
   const readyTasks = tasks.filter(t => t.status !== "Completed").sort((a, b) => (a.priority === "Critical" ? -2 : a.priority === "High" ? -1 : 1) - (b.priority === "Critical" ? -2 : b.priority === "High" ? -1 : 1));
   const spotlightTask = readyTasks[spotlightIndex % Math.max(readyTasks.length, 1)];
@@ -83,6 +86,13 @@ export default function Home() {
   useEffect(() => { if (readyTasks.length < 2) return; const id = window.setInterval(() => setSpotlightIndex(index => (index + 1) % readyTasks.length), 3000); return () => window.clearInterval(id); }, [readyTasks.length]);
 
   function flash(message: string) { setNotice(message); window.setTimeout(() => setNotice(""), 2800); }
+  function maybeShowSignup() {
+    const now = Date.now();
+    const recent = load<number[]>("bdd-signup-prompts", []).filter(timestamp => now - timestamp < 30 * 60 * 1000);
+    if (recent.length >= 2) return;
+    save("bdd-signup-prompts", [...recent, now]);
+    setShowSignup(true);
+  }
   function toggleVoiceNote() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (listening) { recognitionRef.current?.stop(); return; }
@@ -107,7 +117,7 @@ export default function Home() {
   function loadSample() { setDump(SAMPLE); flash("Sample loaded — turn the noise into a plan."); }
   function processDump(mode: "plan" | "organize") {
     if (!dump.trim()) { flash("Add a few thoughts first — messy is completely fine."); return; }
-    const next = extractTasks(dump); setTasks(next); setHistory(h => [dump, ...h].slice(0, 8)); setShowSignup(true);
+    const next = extractTasks(dump); setTasks(next); setHistory(h => [dump, ...h].slice(0, 8)); maybeShowSignup();
     setView("checklist");
     flash("Your thoughts are now a checklist.");
   }
@@ -117,7 +127,7 @@ export default function Home() {
     for (const task of active) { if (elapsed + task.minutes > available) break; const start = 9 * 60 + elapsed; blocks.push({ taskId: task.id, label: task.title, time: `${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`, minutes: task.minutes }); elapsed += task.minutes; if (elapsed < available && blocks.length % 2 === 0) { blocks.push({ taskId: `break-${blocks.length}`, label: "Short reset", time: `${String(Math.floor((9 * 60 + elapsed) / 60)).padStart(2, "0")}:${String((9 * 60 + elapsed) % 60).padStart(2, "0")}`, minutes: 5, kind: "break" }); elapsed += 5; } }
     setPlan(blocks); setView("today"); flash("A realistic plan is ready for the time you have.");
   }
-  function toggleTask(id: string) { setTasks(ts => ts.map(t => t.id === id ? { ...t, status: t.status === "Completed" ? "Ready" : "Completed" } : t)); }
+  function toggleTask(id: string) { setTasks(ts => ts.map(t => t.id === id ? { ...t, status: t.status === "Completed" ? "Ready" : "Completed", completedAt: t.status === "Completed" ? undefined : Date.now() } : t)); }
   function makeEasier(id: string) { setTasks(ts => ts.map(t => t.id === id ? { ...t, subtasks: ["Open the relevant document", "Work for five focused minutes", "Write down what is still unclear", ...t.subtasks].slice(0, 5) } : t)); flash("The task is smaller now. Start with the first step."); }
   function startFocus(id: string) { setFocusId(id); setSeconds(25 * 60); setRunning(false); setView("focus"); }
   function updateTaskTitle(id: string, title: string) { setTasks(ts => ts.map(task => task.id === id ? { ...task, title } : task)); }
@@ -134,6 +144,7 @@ export default function Home() {
   return <div className="app-shell">
     <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
       <div className="brand" onClick={() => setView("today")}><span className="brand-mark"><img src="/brain-logo-small.png" alt="Brain Dump → Done logo" /></span><span><strong>brain dump</strong><em>→ done</em></span></div>
+      <div className="profile-card"><div className="profile-card-head"><div className="profile-avatar">AS</div><div><strong>Your profile</strong><span>Guest workspace</span></div></div><div className="profile-stats"><div><b>{todayProgress}%</b><span>Today</span></div><div><b>{progress}%</b><span>All time</span></div></div><button className="profile-signup" onClick={() => setShowSignup(true)}>Sign up to save <ArrowRight size={13} /></button></div>
       <div className="side-label">Your workspace</div>
       <nav>{nav.map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => { setView(item.id as View); setMobileNav(false); }}><Icon size={17} /><span>{item.label}</span>{item.id === "tasks" && <small>{tasks.filter(t => t.status !== "Completed").length}</small>}</button>; })}</nav>
       <div className="sidebar-bottom"><div className="tiny-progress"><span>Your progress</span><b>{progress}%</b><div><i style={{ width: `${progress}%` }} /></div></div><button className="profile-link" onClick={() => flash("Your progress will be available in Profile when you sign up.")}><Target size={14} /> Profile & progress</button></div>
