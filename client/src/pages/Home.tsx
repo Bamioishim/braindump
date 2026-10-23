@@ -86,6 +86,28 @@ export default function Home() {
   useEffect(() => { if (readyTasks.length < 2) return; const id = window.setInterval(() => setSpotlightIndex(index => (index + 1) % readyTasks.length), 3000); return () => window.clearInterval(id); }, [readyTasks.length]);
 
   function flash(message: string) { setNotice(message); window.setTimeout(() => setNotice(""), 2800); }
+  function toggleTheme(event: { currentTarget: HTMLButtonElement }) {
+    const nextTheme = theme === "light" ? "dark" : "light";
+    const root = document.documentElement;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const transitionApi = (document as Document & { startViewTransition?: (callback: () => void) => { ready: Promise<void> } }).startViewTransition;
+    const buttonRect = event.currentTarget.getBoundingClientRect();
+    const x = buttonRect.left + buttonRect.width / 2;
+    const y = buttonRect.top + buttonRect.height / 2;
+    const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+    root.style.setProperty("--theme-x", `${x}px`);
+    root.style.setProperty("--theme-y", `${y}px`);
+    root.style.setProperty("--theme-radius", `${radius}px`);
+    const applyTheme = () => { root.classList.toggle("dark", nextTheme === "dark"); setTheme(nextTheme); save("bdd-theme", nextTheme); };
+    if (reducedMotion) { applyTheme(); return; }
+    if (transitionApi) {
+      transitionApi.call(document, applyTheme);
+      return;
+    }
+    root.classList.add("theme-fade");
+    applyTheme();
+    window.setTimeout(() => root.classList.remove("theme-fade"), 500);
+  }
   function maybeShowSignup() {
     const now = Date.now();
     const recent = load<number[]>("bdd-signup-prompts", []).filter(timestamp => now - timestamp < 30 * 60 * 1000);
@@ -151,7 +173,7 @@ export default function Home() {
     </aside>
     {mobileNav && <button className="mobile-nav-backdrop" aria-label="Close navigation menu" onClick={() => setMobileNav(false)} />}
     <main className="main-content">
-      <header className="topbar"><button className="icon-button mobile-menu" onClick={() => setMobileNav(v => !v)}><Menu size={20} /></button><div className="crumb">{view === "today" ? <img className="topbar-logo" src="/brain-logo-small.png" alt="Brain Dump → Done" /> : <span>{nav.find(n => n.id === view)?.label}</span>}</div><div className="top-actions"><div className="top-progress"><span>{completed}/{tasks.length} done</span><div><i style={{ width: `${progress}%` }} /></div></div><button className="theme-toggle" onClick={() => setTheme(current => current === "light" ? "dark" : "light")} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`} title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? <Moon size={15} /> : <Sun size={15} />}<span>{theme === "light" ? "Dark" : "Light"}</span></button><button className="new-dump" onClick={() => { setDump(""); setView("dump"); }}><Plus size={16} /> New brain dump</button><button className="avatar" onClick={() => flash("Sign up to keep your progress across devices.")}>AS</button></div></header>
+      <header className="topbar"><button className="icon-button mobile-menu" onClick={() => setMobileNav(v => !v)}><Menu size={20} /></button><div className="crumb">{view === "today" ? <img className="topbar-logo" src="/brain-logo-small.png" alt="Brain Dump → Done" /> : <span>{nav.find(n => n.id === view)?.label}</span>}</div><div className="top-actions"><div className="top-progress"><span>{completed}/{tasks.length} done</span><div><i style={{ width: `${progress}%` }} /></div></div><button className="theme-toggle" onClick={toggleTheme} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`} title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? <Moon size={15} /> : <Sun size={15} />}<span>{theme === "light" ? "Dark" : "Light"}</span></button><button className="new-dump" onClick={() => { setDump(""); setView("dump"); }}><Plus size={16} /> New brain dump</button><button className="avatar" onClick={() => flash("Sign up to keep your progress across devices.")}>AS</button></div></header>
       {showSignup && <div className="signup-popover"><div className="signup-popover-icon"><Sparkles size={16} /></div><div><strong>Keep your progress safe</strong><p>Sign up so your tasks and plans don’t disappear when you switch devices.</p><div className="signup-actions"><button className="button small primary" onClick={() => flash("Sign-up is ready when you are.")}>Sign up</button><button onClick={() => setShowSignup(false)}>Not now</button></div></div><button className="signup-close" onClick={() => setShowSignup(false)}><X size={14} /></button></div>}
       {notice && <div className="toast"><Sparkles size={16} /> {notice}</div>}
       <div className="page-wrap">

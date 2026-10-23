@@ -55,3 +55,12 @@ nav { display:grid; gap:4px; }.nav-item { display:flex; align-items:center; gap:
 
 .profile-card { margin:0 0 24px; padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--paper); }.profile-card-head { display:flex; align-items:center; gap:9px; }.profile-avatar { width:29px; height:29px; display:grid; place-items:center; border-radius:50%; background:var(--sage); color:var(--forest); font-size:9px; font-weight:800; }.profile-card-head strong,.profile-card-head span { display:block; }.profile-card-head strong { font-size:11px; }.profile-card-head span { margin-top:2px; color:var(--muted); font-size:9px; }.profile-stats { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:12px; }.profile-stats>div { padding:8px; border-radius:8px; background:var(--ivory); }.profile-stats b,.profile-stats span { display:block; }.profile-stats b { color:var(--forest); font-size:15px; }.profile-stats span { margin-top:2px; color:var(--muted); font-size:9px; }.profile-signup { display:flex; align-items:center; justify-content:center; gap:5px; width:100%; margin-top:9px; padding:7px 5px; border-radius:7px; background:var(--forest); color:#fff; font-size:9px; font-weight:700; }.profile-signup:hover { background:#18382c; }.dark .profile-card { background:var(--paper); border-color:var(--line); }.dark .profile-stats>div { background:#252a25; }.dark .profile-avatar { background:#2b3d30; color:#d6e3d4; }
 @media (max-width:700px) { .profile-card { margin-bottom:20px; } }
+
+@view-transition { navigation: auto; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration:0ms; mix-blend-mode:normal; }
+@keyframes theme-ripple { from { clip-path:circle(0 at var(--theme-x) var(--theme-y)); } to { clip-path:circle(var(--theme-radius) at var(--theme-x) var(--theme-y)); } }
+@keyframes theme-fade { from { opacity:.72; } to { opacity:1; } }
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-new(root) { animation:theme-ripple 500ms cubic-bezier(.22,.8,.28,1) both; z-index:2; }
+  html.theme-fade { animation:theme-fade 500ms ease both; }
+}
